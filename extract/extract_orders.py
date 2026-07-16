@@ -26,17 +26,17 @@ for col in ["line_items", "status_history"]:
     if col in df_orders.columns:
         df_orders[col] = df_orders[col].apply(lambda x: str(x) if x else None)
 
-spark.createDataFrame(df_orders).write.mode("append").saveAsTable("raw.orders")
-print(f"✓ raw.orders: {data['orders']['count']} rows")
+spark.createDataFrame(df_orders).write.mode("append").saveAsTable("Lakehouse.raw.orders")
+print(f"✓ Lakehouse.raw.orders: {data['orders']['count']} rows")
 
 # --- Page Views ---
 df_page_views = pd.json_normalize(data["page_views"]["events"])
-spark.createDataFrame(df_page_views).write.mode("append").saveAsTable("raw.page_views")
-print(f"✓ raw.page_views: {data['page_views']['count']} rows")
+spark.createDataFrame(df_page_views).write.mode("append").saveAsTable("Lakehouse.raw.page_views")
+print(f"✓ Lakehouse.raw.page_views: {data['page_views']['count']} rows")
 
 # --- Cart Adds ---
 df_cart_adds = pd.json_normalize(data["cart_adds"]["events"])
-spark.createDataFrame(df_cart_adds).write.mode("append").saveAsTable("raw.cart_adds")
-print(f"✓ raw.cart_adds: {data['cart_adds']['count']} rows")
+spark.createDataFrame(df_cart_adds).write.mode("append").saveAsTable("Lakehouse.raw.cart_adds")
+print(f"✓ Lakehouse.raw.cart_adds: {data['cart_adds']['count']} rows")
 
 print(f"\nDone | seed: {data['seed']} | gen_time: {data['generation_time_ms']}ms")

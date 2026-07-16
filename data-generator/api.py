@@ -11,9 +11,10 @@ Endpoints:
     POST /generate/all
 
 Query params (all optional):
-    days            - number of historical days (default 14)
+    days            - number of historical days (default 1)
     seed            - random seed; omit for random each call
     backfill_spike  - true/false to amplify late arrivals
+    limit           - max events to return (default 500)
 """
 
 import random
@@ -42,14 +43,16 @@ def _resolve_seed(seed: int | None) -> int:
 
 @app.post("/generate/orders")
 def api_generate_orders(
-    days: int = Query(default=14, ge=1, le=365),
+    days: int = Query(default=1, ge=1, le=30),
     seed: int | None = Query(default=None),
     backfill_spike: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=5000),
 ):
     resolved_seed = _resolve_seed(seed)
     start = time.time()
 
     orders = generate_orders(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
+    orders = orders[:limit]
 
     return JSONResponse(content={
         "event_type": "orders",
@@ -64,14 +67,16 @@ def api_generate_orders(
 
 @app.post("/generate/page_views")
 def api_generate_page_views(
-    days: int = Query(default=14, ge=1, le=365),
+    days: int = Query(default=1, ge=1, le=30),
     seed: int | None = Query(default=None),
     backfill_spike: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=5000),
 ):
     resolved_seed = _resolve_seed(seed)
     start = time.time()
 
     page_views = generate_page_views(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
+    page_views = page_views[:limit]
 
     return JSONResponse(content={
         "event_type": "page_views",
@@ -86,14 +91,16 @@ def api_generate_page_views(
 
 @app.post("/generate/cart_adds")
 def api_generate_cart_adds(
-    days: int = Query(default=14, ge=1, le=365),
+    days: int = Query(default=1, ge=1, le=30),
     seed: int | None = Query(default=None),
     backfill_spike: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=5000),
 ):
     resolved_seed = _resolve_seed(seed)
     start = time.time()
 
     cart_adds = generate_cart_adds(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
+    cart_adds = cart_adds[:limit]
 
     return JSONResponse(content={
         "event_type": "cart_adds",
@@ -108,16 +115,17 @@ def api_generate_cart_adds(
 
 @app.post("/generate/all")
 def api_generate_all(
-    days: int = Query(default=14, ge=1, le=365),
+    days: int = Query(default=1, ge=1, le=30),
     seed: int | None = Query(default=None),
     backfill_spike: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=5000),
 ):
     resolved_seed = _resolve_seed(seed)
     start = time.time()
 
-    orders = generate_orders(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
-    page_views = generate_page_views(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
-    cart_adds = generate_cart_adds(days=days, seed=resolved_seed, backfill_spike=backfill_spike)
+    orders = generate_orders(days=days, seed=resolved_seed, backfill_spike=backfill_spike)[:limit]
+    page_views = generate_page_views(days=days, seed=resolved_seed, backfill_spike=backfill_spike)[:limit]
+    cart_adds = generate_cart_adds(days=days, seed=resolved_seed, backfill_spike=backfill_spike)[:limit]
 
     return JSONResponse(content={
         "seed": resolved_seed,
