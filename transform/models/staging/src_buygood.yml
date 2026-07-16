@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: buygood_raw
+    description: Raw event data loaded from the BuyGood API into the lakehouse
+    schema: dbo
+    tables:
+      - name: raw_orders
+        description: Raw order events with line items and status history
+      - name: raw_page_views
+        description: Raw page view events from user sessions
+      - name: raw_cart_adds
+        description: Raw cart add events from user sessions

@@ -1,0 +1,19 @@
+# This file is for reference / local dev.
+# In Fabric, the connection is configured in the deployment target.
+#
+# To use locally, set env vars or replace placeholders:
+#   DBT_FABRIC_SERVER, DBT_FABRIC_DATABASE
+
+buygood:
+  target: dev
+  outputs:
+    dev:
+      type: fabric
+      driver: "ODBC Driver 18 for SQL Server"
+      server: "{{ env_var('DBT_FABRIC_SERVER') }}"
+      database: "{{ env_var('DBT_FABRIC_DATABASE') }}"
+      schema: dbo
+      port: 1433
+      authentication: CLI
+      # Options: CLI, ServicePrincipal, ActiveDirectoryPassword
+      # For Fabric, CLI auth uses your Azure login (az login)
