@@ -249,7 +249,6 @@ def _build_status_history(placed_at: datetime, rng: random.Random) -> tuple[str,
 
 def generate_orders(
      days: int = 14,
-     output_file: str = "landing/orders.jsonl",
      seed: int = SEED,
      backfill_spike: bool = False,
 ) -> list[dict]:
@@ -298,18 +297,11 @@ def generate_orders(
                )
                order_counter += 1
 
-     output_path = Path(output_file)
-     output_path.parent.mkdir(parents=True, exist_ok=True)
-     with output_path.open("w", encoding="utf-8") as file_handle:
-          for order in orders:
-               file_handle.write(json.dumps(order) + "\n")
-
      return orders
 
 
 def generate_page_views(
      days: int = 14,
-     output_file: str = "landing/page_views.jsonl",
      seed: int = SEED,
      backfill_spike: bool = False,
 ) -> list[dict]:
@@ -346,18 +338,11 @@ def generate_page_views(
                )
                view_counter += 1
 
-     output_path = Path(output_file)
-     output_path.parent.mkdir(parents=True, exist_ok=True)
-     with output_path.open("w", encoding="utf-8") as file_handle:
-          for event in page_views:
-               file_handle.write(json.dumps(event) + "\n")
-
      return page_views
 
 
 def generate_cart_adds(
      days: int = 14,
-     output_file: str = "landing/cart_adds.jsonl",
      seed: int = SEED,
      backfill_spike: bool = False,
 ) -> list[dict]:
@@ -395,12 +380,6 @@ def generate_cart_adds(
                     }
                )
                cart_add_counter += 1
-
-     output_path = Path(output_file)
-     output_path.parent.mkdir(parents=True, exist_ok=True)
-     with output_path.open("w", encoding="utf-8") as file_handle:
-          for event in cart_adds:
-               file_handle.write(json.dumps(event) + "\n")
 
      return cart_adds
 
