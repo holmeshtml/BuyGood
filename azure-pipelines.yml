@@ -1,0 +1,40 @@
+trigger:
+- main
+
+resources:
+- repo: self
+
+stages:
+- stage: Build
+  displayName: Build image
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: Docker@2
+      displayName: Build an image
+      inputs:
+        command: build
+        dockerfile: '$(Build.SourcesDirectory)/backend/Dockerfile'
+        buildContext: '$(Build.SourcesDirectory)/backend'
+        tags: |
+          $(Build.BuildId)
+
+- stage: Deploy
+  displayName: Deploy to Railway
+  dependsOn: Build
+  jobs:
+  - job: Deploy
+    displayName: Deploy
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - script: |
+        npm install -g @railway/cli
+        cd backend
+        railway up
+      displayName: 'Deploy to Railway'
+      env:
+        RAILWAY_TOKEN: $(RAILWAY_TOKEN)
