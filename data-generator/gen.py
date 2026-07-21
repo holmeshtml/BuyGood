@@ -67,6 +67,7 @@ def _build_products() -> list[dict]:
             "product_id": p["product_id"],
             "name": p["name"],
             "category": p["category"],
+            "stock_quantity": 50,
             "created_at": "2024-01-01T00:00:00+00:00",
         }
         for p in CATALOG
@@ -331,13 +332,14 @@ def write_to_postgres(
             product_id VARCHAR PRIMARY KEY,
             name VARCHAR,
             category VARCHAR,
+            stock_quantity INTEGER,
             created_at TIMESTAMPTZ
         )
     """)
     for p in products:
         cur.execute(
-            "INSERT INTO products VALUES (%s,%s,%s,%s)",
-            (p["product_id"], p["name"], p["category"], p["created_at"]),
+            "INSERT INTO products VALUES (%s,%s,%s,%s,%s)",
+            (p["product_id"], p["name"], p["category"], p["stock_quantity"], p["created_at"]),
         )
 
     # --- product_prices ---
