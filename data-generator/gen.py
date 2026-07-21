@@ -3,7 +3,6 @@ import json
 import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from collections import defaultdict
 from uuid import uuid4
 
 from faker import Faker
@@ -78,7 +77,6 @@ def _build_product_prices(rng: random.Random) -> list[dict]:
     """Generate price history for each product. Current price + one older price."""
     prices = []
     for p in CATALOG:
-        # Current price
         prices.append({
             "product_id": p["product_id"],
             "price": p["unit_price"],
@@ -86,7 +84,6 @@ def _build_product_prices(rng: random.Random) -> list[dict]:
             "valid_from": "2025-01-01T00:00:00+00:00",
             "valid_to": None,
         })
-        # Historical price (slightly different)
         old_price = round(p["unit_price"] * rng.uniform(0.85, 1.15), 2)
         prices.append({
             "product_id": p["product_id"],
@@ -133,7 +130,6 @@ def generate_orders(
 
             order_id = f"O-{order_counter:08d}"
 
-            # Line items
             num_items = rng.randint(1, 4)
             sampled_products = rng.sample(CATALOG, k=num_items)
             order_total = 0.0
@@ -155,7 +151,6 @@ def generate_orders(
 
             order_total = round(order_total, 2)
 
-            # Determine status
             is_refunded = rng.random() < REFUND_RATE
             status = "refunded" if is_refunded else "shipped"
 
@@ -169,7 +164,6 @@ def generate_orders(
                 "updated_at": (placed_at + timedelta(hours=rng.randint(2, 72))).isoformat(),
             })
 
-            # Payment
             paid_at = placed_at + timedelta(minutes=rng.randint(1, 45))
             payments.append({
                 "payment_id": f"PAY-{payment_counter:010d}",
@@ -181,7 +175,6 @@ def generate_orders(
                 "paid_at": paid_at.isoformat(),
             })
             payment_counter += 1
-
             order_counter += 1
 
     return orders, order_items, payments
@@ -191,7 +184,7 @@ def generate_events(
     days: int = 14,
     seed: int = SEED,
 ) -> list[dict]:
-    """Generate a unified events table (page_view, cart_add, purchase event types)."""
+    """Generate a unified events table (page_view, cart_add event types)."""
     fake = Faker()
     fake.seed_instance(seed)
     rng = random.Random(seed + 1)
@@ -220,7 +213,6 @@ def generate_events(
             device = rng.choice(DEVICES)
             referrer = rng.choice(REFERRERS)
 
-            # Page views in this session
             views_in_session = rng.randint(SESSION_PAGE_VIEWS_MIN, SESSION_PAGE_VIEWS_MAX)
             for view_index in range(views_in_session):
                 event_time = session_start + timedelta(seconds=rng.randint(view_index * 7, view_index * 90 + 10))
@@ -238,7 +230,6 @@ def generate_events(
                 })
                 event_counter += 1
 
-            # Cart adds in this session
             adds_in_session = rng.randint(CART_ADDS_PER_SESSION_MIN, CART_ADDS_PER_SESSION_MAX)
             for _ in range(adds_in_session):
                 product = rng.choice(CATALOG)
@@ -274,9 +265,8 @@ def _chunked(items, size):
 
 def write_partitioned_json(records: list[dict], stream_name: str) -> list[Path]:
     """Write records as partitioned JSON files in the landing zone."""
-    landing_dir = LANDING_DIR
     run_id = uuid4().hex[:8]
-    partition_dir = landing_dir / f"{SOURCE_NAME}/{stream_name}"
+    partition_dir = LANDING_DIR / f"{SOURCE_NAME}/{stream_name}"
     partition_dir.mkdir(parents=True, exist_ok=True)
 
     written_files = []
@@ -289,7 +279,7 @@ def write_partitioned_json(records: list[dict], stream_name: str) -> list[Path]:
     return written_files
 
 
-def write_to_duckdb(
+def write_to_postgres(
     customers: list[dict],
     products: list[dict],
     product_prices: list[dict],
@@ -297,123 +287,136 @@ def write_to_duckdb(
     order_items: list[dict],
     payments: list[dict],
     events: list[dict],
-    db_path: str = "goodbuy.duckdb",
+    database_url: str,
 ) -> None:
-    """Write all generated data into a local DuckDB database with normalized tables."""
-    import duckdb
+    """Write all generated data into a Postgres database.
 
-    con = duckdb.connect(db_path)
+    Expects DATABASE_URL like: postgres://user:pass@host:5432/dbname
+    Drops and recreates all tables on each run (idempotent seed).
+    """
+    import psycopg2
+
+    con = psycopg2.connect(database_url)
+    cur = con.cursor()
+
+    # Drop tables (reverse dependency order)
+    cur.execute("DROP TABLE IF EXISTS events CASCADE")
+    cur.execute("DROP TABLE IF EXISTS payments CASCADE")
+    cur.execute("DROP TABLE IF EXISTS order_items CASCADE")
+    cur.execute("DROP TABLE IF EXISTS orders CASCADE")
+    cur.execute("DROP TABLE IF EXISTS product_prices CASCADE")
+    cur.execute("DROP TABLE IF EXISTS products CASCADE")
+    cur.execute("DROP TABLE IF EXISTS customers CASCADE")
 
     # --- customers ---
-    con.execute("DROP TABLE IF EXISTS customers")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE customers (
             customer_id VARCHAR PRIMARY KEY,
             full_name VARCHAR,
             email VARCHAR,
             phone VARCHAR,
             address VARCHAR,
-            created_at TIMESTAMP
+            created_at TIMESTAMPTZ
         )
     """)
-    con.executemany(
-        "INSERT INTO customers VALUES (?,?,?,?,?,?)",
-        [[c["customer_id"], c["full_name"], c["email"], c["phone"], c["address"], c["created_at"]] for c in customers],
-    )
+    for c in customers:
+        cur.execute(
+            "INSERT INTO customers VALUES (%s,%s,%s,%s,%s,%s)",
+            (c["customer_id"], c["full_name"], c["email"], c["phone"], c["address"], c["created_at"]),
+        )
 
     # --- products ---
-    con.execute("DROP TABLE IF EXISTS products")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE products (
             product_id VARCHAR PRIMARY KEY,
             name VARCHAR,
             category VARCHAR,
-            created_at TIMESTAMP
+            created_at TIMESTAMPTZ
         )
     """)
-    con.executemany(
-        "INSERT INTO products VALUES (?,?,?,?)",
-        [[p["product_id"], p["name"], p["category"], p["created_at"]] for p in products],
-    )
+    for p in products:
+        cur.execute(
+            "INSERT INTO products VALUES (%s,%s,%s,%s)",
+            (p["product_id"], p["name"], p["category"], p["created_at"]),
+        )
 
     # --- product_prices ---
-    con.execute("DROP TABLE IF EXISTS product_prices")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE product_prices (
-            product_id VARCHAR,
-            price DOUBLE,
+            product_id VARCHAR REFERENCES products(product_id),
+            price NUMERIC(10,2),
             currency VARCHAR,
-            valid_from TIMESTAMP,
-            valid_to TIMESTAMP
+            valid_from TIMESTAMPTZ,
+            valid_to TIMESTAMPTZ
         )
     """)
-    con.executemany(
-        "INSERT INTO product_prices VALUES (?,?,?,?,?)",
-        [[pp["product_id"], pp["price"], pp["currency"], pp["valid_from"], pp["valid_to"]] for pp in product_prices],
-    )
+    for pp in product_prices:
+        cur.execute(
+            "INSERT INTO product_prices VALUES (%s,%s,%s,%s,%s)",
+            (pp["product_id"], pp["price"], pp["currency"], pp["valid_from"], pp["valid_to"]),
+        )
 
     # --- orders ---
-    con.execute("DROP TABLE IF EXISTS orders")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE orders (
             order_id VARCHAR PRIMARY KEY,
-            customer_id VARCHAR,
+            customer_id VARCHAR REFERENCES customers(customer_id),
             status VARCHAR,
-            order_total DOUBLE,
+            order_total NUMERIC(10,2),
             currency VARCHAR,
-            placed_at TIMESTAMP,
-            updated_at TIMESTAMP
+            placed_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ
         )
     """)
-    con.executemany(
-        "INSERT INTO orders VALUES (?,?,?,?,?,?,?)",
-        [[o["order_id"], o["customer_id"], o["status"], o["order_total"], o["currency"], o["placed_at"], o["updated_at"]] for o in orders],
-    )
+    for o in orders:
+        cur.execute(
+            "INSERT INTO orders VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (o["order_id"], o["customer_id"], o["status"], o["order_total"], o["currency"], o["placed_at"], o["updated_at"]),
+        )
 
     # --- order_items ---
-    con.execute("DROP TABLE IF EXISTS order_items")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE order_items (
             order_item_id VARCHAR PRIMARY KEY,
-            order_id VARCHAR,
-            product_id VARCHAR,
+            order_id VARCHAR REFERENCES orders(order_id),
+            product_id VARCHAR REFERENCES products(product_id),
             quantity INTEGER,
-            unit_price DOUBLE,
-            line_total DOUBLE
+            unit_price NUMERIC(10,2),
+            line_total NUMERIC(10,2)
         )
     """)
-    con.executemany(
-        "INSERT INTO order_items VALUES (?,?,?,?,?,?)",
-        [[oi["order_item_id"], oi["order_id"], oi["product_id"], oi["quantity"], oi["unit_price"], oi["line_total"]] for oi in order_items],
-    )
+    for oi in order_items:
+        cur.execute(
+            "INSERT INTO order_items VALUES (%s,%s,%s,%s,%s,%s)",
+            (oi["order_item_id"], oi["order_id"], oi["product_id"], oi["quantity"], oi["unit_price"], oi["line_total"]),
+        )
 
     # --- payments ---
-    con.execute("DROP TABLE IF EXISTS payments")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE payments (
             payment_id VARCHAR PRIMARY KEY,
-            order_id VARCHAR,
-            amount DOUBLE,
+            order_id VARCHAR REFERENCES orders(order_id),
+            amount NUMERIC(10,2),
             currency VARCHAR,
             method VARCHAR,
             status VARCHAR,
-            paid_at TIMESTAMP
+            paid_at TIMESTAMPTZ
         )
     """)
-    con.executemany(
-        "INSERT INTO payments VALUES (?,?,?,?,?,?,?)",
-        [[p["payment_id"], p["order_id"], p["amount"], p["currency"], p["method"], p["status"], p["paid_at"]] for p in payments],
-    )
+    for p in payments:
+        cur.execute(
+            "INSERT INTO payments VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (p["payment_id"], p["order_id"], p["amount"], p["currency"], p["method"], p["status"], p["paid_at"]),
+        )
 
     # --- events ---
-    con.execute("DROP TABLE IF EXISTS events")
-    con.execute("""
+    cur.execute("""
         CREATE TABLE events (
             event_id VARCHAR PRIMARY KEY,
             event_type VARCHAR,
             session_id VARCHAR,
             customer_id VARCHAR,
-            event_time TIMESTAMP,
+            event_time TIMESTAMPTZ,
             device VARCHAR,
             referrer VARCHAR,
             page_path VARCHAR,
@@ -421,15 +424,18 @@ def write_to_duckdb(
             quantity INTEGER
         )
     """)
-    con.executemany(
-        "INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)",
-        [[e["event_id"], e["event_type"], e["session_id"], e["customer_id"], e["event_time"],
-          e["device"], e["referrer"], e["page_path"], e["product_id"], e["quantity"]] for e in events],
-    )
+    for e in events:
+        cur.execute(
+            "INSERT INTO events VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (e["event_id"], e["event_type"], e["session_id"], e["customer_id"], e["event_time"],
+             e["device"], e["referrer"], e["page_path"], e["product_id"], e["quantity"]),
+        )
 
+    con.commit()
+    cur.close()
     con.close()
 
-    print(f"DuckDB: {db_path}")
+    print(f"Postgres: {database_url.split('@')[1] if '@' in database_url else database_url}")
     print(f"  customers:      {len(customers)}")
     print(f"  products:       {len(products)}")
     print(f"  product_prices: {len(product_prices)}")
@@ -448,12 +454,9 @@ if __name__ == "__main__":
     parser.add_argument("--days", type=int, default=14, help="Number of historical days to generate.")
     parser.add_argument("--seed", type=int, default=SEED, help="Random seed for deterministic output.")
     parser.add_argument(
-        "--duckdb",
-        nargs="?",
-        const="goodbuy.duckdb",
-        default=None,
-        metavar="PATH",
-        help="Write to a DuckDB file (default: goodbuy.duckdb). Omit flag for JSON landing files.",
+        "--postgres",
+        action="store_true",
+        help="Write to Postgres using DATABASE_URL env var.",
     )
     args = parser.parse_args()
 
@@ -470,8 +473,13 @@ if __name__ == "__main__":
     orders, order_items, payments = generate_orders(days=args.days, seed=args.seed)
     events = generate_events(days=args.days, seed=args.seed)
 
-    if args.duckdb:
-        write_to_duckdb(customers, products, product_prices, orders, order_items, payments, events, db_path=args.duckdb)
+    if args.postgres:
+        import os
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            print("ERROR: DATABASE_URL env var is required when using --postgres")
+            raise SystemExit(1)
+        write_to_postgres(customers, products, product_prices, orders, order_items, payments, events, database_url=database_url)
     else:
         # Write as partitioned JSON landing files
         streams = {

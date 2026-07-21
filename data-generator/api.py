@@ -1,8 +1,11 @@
 """
-Read-only API serving generated ecommerce data from a baked-in DuckDB file.
+Read-only API serving generated ecommerce data from Postgres.
+
+Requires DATABASE_URL env var.
 
 Run locally:
-    python gen.py --duckdb
+    export DATABASE_URL=postgres://dabag:dabag_pw@localhost:5433/dabag
+    python gen.py --postgres --days 22
     uvicorn api:app --reload --port 8000
 
 Endpoints:
@@ -19,19 +22,22 @@ Endpoints:
     GET /health
 """
 
-import duckdb
+import os
+
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, Query, HTTPException
 
 app = FastAPI(
     title="GoodBuy Ecommerce API",
-    description="Read-only API for generated ecommerce data backed by DuckDB.",
+    description="Read-only API for generated ecommerce data backed by Postgres.",
 )
 
-DB_PATH = "goodbuy.duckdb"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 def get_conn():
-    return duckdb.connect(DB_PATH, read_only=True)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 # ---------------------------------------------------------------------------
@@ -44,24 +50,25 @@ def list_customers(
     offset: int = Query(default=0, ge=0),
 ):
     con = get_conn()
-    rows = con.execute(
-        "SELECT * FROM customers ORDER BY customer_id LIMIT ? OFFSET ?",
-        [limit, offset],
-    ).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM customers ORDER BY customer_id LIMIT %s OFFSET %s", (limit, offset))
+    rows = cur.fetchall()
+    cur.close()
     con.close()
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 @app.get("/customers/{customer_id}")
 def get_customer(customer_id: str):
     con = get_conn()
-    rows = con.execute("SELECT * FROM customers WHERE customer_id = ?", [customer_id]).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM customers WHERE customer_id = %s", (customer_id,))
+    row = cur.fetchone()
+    cur.close()
     con.close()
-    if not rows:
+    if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return dict(zip(columns, rows[0]))
+    return dict(row)
 
 
 # ---------------------------------------------------------------------------
@@ -71,35 +78,41 @@ def get_customer(customer_id: str):
 @app.get("/products")
 def list_products():
     con = get_conn()
-    rows = con.execute("SELECT * FROM products ORDER BY product_id").fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM products ORDER BY product_id")
+    rows = cur.fetchall()
+    cur.close()
     con.close()
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 @app.get("/products/{product_id}")
 def get_product(product_id: str):
     con = get_conn()
-    rows = con.execute("SELECT * FROM products WHERE product_id = ?", [product_id]).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM products WHERE product_id = %s", (product_id,))
+    row = cur.fetchone()
+    cur.close()
     con.close()
-    if not rows:
+    if not row:
         raise HTTPException(status_code=404, detail="Product not found")
-    return dict(zip(columns, rows[0]))
+    return dict(row)
 
 
 @app.get("/products/{product_id}/prices")
 def get_product_prices(product_id: str):
     con = get_conn()
-    rows = con.execute(
-        "SELECT * FROM product_prices WHERE product_id = ? ORDER BY valid_from DESC",
-        [product_id],
-    ).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM product_prices WHERE product_id = %s ORDER BY valid_from DESC",
+        (product_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
     con.close()
     if not rows:
         raise HTTPException(status_code=404, detail="Product not found")
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -114,62 +127,65 @@ def list_orders(
     status: str | None = Query(default=None),
 ):
     con = get_conn()
+    cur = con.cursor()
+
     query = "SELECT * FROM orders WHERE 1=1"
     params = []
 
     if customer_id:
-        query += " AND customer_id = ?"
+        query += " AND customer_id = %s"
         params.append(customer_id)
     if status:
-        query += " AND status = ?"
+        query += " AND status = %s"
         params.append(status)
 
-    query += " ORDER BY placed_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY placed_at DESC LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
-    rows = con.execute(query, params).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    cur.close()
     con.close()
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 @app.get("/orders/{order_id}")
 def get_order(order_id: str):
     con = get_conn()
-    rows = con.execute("SELECT * FROM orders WHERE order_id = ?", [order_id]).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM orders WHERE order_id = %s", (order_id,))
+    row = cur.fetchone()
+    cur.close()
     con.close()
-    if not rows:
+    if not row:
         raise HTTPException(status_code=404, detail="Order not found")
-    return dict(zip(columns, rows[0]))
+    return dict(row)
 
 
 @app.get("/orders/{order_id}/items")
 def get_order_items(order_id: str):
     con = get_conn()
-    rows = con.execute(
-        "SELECT * FROM order_items WHERE order_id = ? ORDER BY order_item_id",
-        [order_id],
-    ).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM order_items WHERE order_id = %s ORDER BY order_item_id", (order_id,))
+    rows = cur.fetchall()
+    cur.close()
     con.close()
     if not rows:
         raise HTTPException(status_code=404, detail="Order not found or has no items")
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 @app.get("/orders/{order_id}/payments")
 def get_order_payments(order_id: str):
     con = get_conn()
-    rows = con.execute(
-        "SELECT * FROM payments WHERE order_id = ?",
-        [order_id],
-    ).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur = con.cursor()
+    cur.execute("SELECT * FROM payments WHERE order_id = %s", (order_id,))
+    rows = cur.fetchall()
+    cur.close()
     con.close()
     if not rows:
         raise HTTPException(status_code=404, detail="Order not found or has no payments")
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -185,26 +201,29 @@ def list_events(
     session_id: str | None = Query(default=None),
 ):
     con = get_conn()
+    cur = con.cursor()
+
     query = "SELECT * FROM events WHERE 1=1"
     params = []
 
     if event_type:
-        query += " AND event_type = ?"
+        query += " AND event_type = %s"
         params.append(event_type)
     if customer_id:
-        query += " AND customer_id = ?"
+        query += " AND customer_id = %s"
         params.append(customer_id)
     if session_id:
-        query += " AND session_id = ?"
+        query += " AND session_id = %s"
         params.append(session_id)
 
-    query += " ORDER BY event_time DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY event_time DESC LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
-    rows = con.execute(query, params).fetchall()
-    columns = [desc[0] for desc in con.description]
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    cur.close()
     con.close()
-    return [dict(zip(columns, row)) for row in rows]
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +232,13 @@ def list_events(
 
 @app.get("/health")
 def health():
-    con = get_conn()
-    count = con.execute("SELECT count(*) FROM orders").fetchone()[0]
-    con.close()
-    return {"status": "ok", "orders_count": count}
+    try:
+        con = get_conn()
+        cur = con.cursor()
+        cur.execute("SELECT count(*) as cnt FROM orders")
+        count = cur.fetchone()["cnt"]
+        cur.close()
+        con.close()
+        return {"status": "ok", "orders_count": count}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
