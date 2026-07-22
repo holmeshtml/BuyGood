@@ -168,6 +168,61 @@ def list_events(
 
 
 # ---------------------------------------------------------------------------
+# Seed Data
+# ---------------------------------------------------------------------------
+
+@app.post("/seed", status_code=status.HTTP_201_CREATED)
+def seed_data(days: int = Query(default=7, ge=1, le=365)):
+    """Drop and re-seed the database with fake data for the given number of days."""
+    import os
+    from faker import Faker
+    import random as _random
+
+    from gen import (
+        _build_customer_pool,
+        _build_products,
+        _build_product_prices,
+        generate_orders,
+        generate_events,
+        write_to_postgres,
+        SEED,
+    )
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
+
+    fake = Faker()
+    fake.seed_instance(SEED)
+    rng = _random.Random(SEED)
+
+    customers = _build_customer_pool(fake)
+    products = _build_products()
+    product_prices = _build_product_prices(rng)
+    orders, order_items, payments = generate_orders(days=days, seed=SEED)
+    events = generate_events(days=days, seed=SEED)
+
+    write_to_postgres(
+        customers, products, product_prices,
+        orders, order_items, payments, events,
+        database_url=database_url,
+    )
+
+    return {
+        "status": "seeded",
+        "days": days,
+        "counts": {
+            "customers": len(customers),
+            "products": len(products),
+            "orders": len(orders),
+            "order_items": len(order_items),
+            "payments": len(payments),
+            "events": len(events),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 

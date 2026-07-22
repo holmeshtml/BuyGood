@@ -1,14 +1,18 @@
 import Link from "next/link";
+import SeedButton from "./seed-button";
 
 export default function Home() {
   return (
     <div className="flex flex-col flex-1">
       {/* Header */}
-      <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">GoodBuy</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Ecommerce Dashboard
-        </p>
+      <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">GoodBuy</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Ecommerce Dashboard
+          </p>
+        </div>
+        <SeedButton />
       </header>
 
       {/* Main */}
