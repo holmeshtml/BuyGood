@@ -8,6 +8,7 @@ Run locally:
 """
 
 from fastapi import FastAPI, Query, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import repository
@@ -17,6 +18,14 @@ from services import ServiceError
 app = FastAPI(
     title="GoodBuy Ecommerce API",
     description="Ecommerce API backed by Postgres.",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
