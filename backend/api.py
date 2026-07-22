@@ -228,8 +228,4 @@ def seed_data(days: int = Query(default=7, ge=1, le=365)):
 
 @app.get("/health")
 def health():
-    try:
-        count = repository.get_order_count()
-        return {"status": "ok", "orders_count": count}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+    return {"status": "ok"}
