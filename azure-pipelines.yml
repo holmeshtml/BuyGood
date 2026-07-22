@@ -26,15 +26,27 @@ stages:
   displayName: Deploy to Railway
   dependsOn: Build
   jobs:
-  - job: Deploy
-    displayName: Deploy
+  - job: DeployBackend
+    displayName: Deploy Backend
     pool:
       vmImage: ubuntu-latest
     steps:
     - script: |
         npm install -g @railway/cli
         cd backend
-        railway up
-      displayName: 'Deploy to Railway'
+        railway up --service BuyGood
+      displayName: 'Deploy Backend to Railway'
+      env:
+        RAILWAY_TOKEN: $(RAILWAY_TOKEN)
+  - job: DeployFrontend
+    displayName: Deploy Frontend
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - script: |
+        npm install -g @railway/cli
+        cd frontend
+        railway up --service goodbuy-frontend
+      displayName: 'Deploy Frontend to Railway'
       env:
         RAILWAY_TOKEN: $(RAILWAY_TOKEN)
